@@ -5,7 +5,8 @@ import dotenv from 'dotenv';
 import gameRoutes from "./routes/gameRoutes";
 import userRoutes from "./routes/userRoutes";
 import { PrismaClient } from '@prisma/client';
-import {handleMultiplayerEvents} from "./multiplayer";
+import { handleSinglePlayerEvents } from "./singlePlayer";
+import { handleMultiplayerEvents } from "./multiplayer";
 
 dotenv.config();
 
@@ -36,7 +37,17 @@ app.use('/api', gameRoutes);
 
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
-    handleMultiplayerEvents(io, socket, prisma);
+
+    socket.on('initialize', (data) => {
+        const { mode } = data;
+        console.log(`Initialize event received: mode = ${mode}`);
+
+        if (mode === 'single') {
+            handleSinglePlayerEvents(io, socket, prisma);
+        } else if (mode === 'multi') {
+            handleMultiplayerEvents(io, socket, prisma);
+        }
+    });
 
     socket.on('disconnect', () => {
         console.log('User disconnected');
