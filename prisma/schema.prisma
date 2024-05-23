@@ -11,7 +11,7 @@ model User {
   id             String @id @default(uuid())
   socketId       String @unique
   name           String
-  status         String @default("waiting")
+  status         String @default("active")
   games          Game[] @relation("Player1")
   gamesAsPlayer2 Game[] @relation("Player2")
 }

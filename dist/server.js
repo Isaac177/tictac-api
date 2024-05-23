@@ -9,13 +9,11 @@ const socket_io_1 = require("socket.io");
 const dotenv_1 = __importDefault(require("dotenv"));
 const gameRoutes_1 = __importDefault(require("./routes/gameRoutes"));
 const userRoutes_1 = __importDefault(require("./routes/userRoutes"));
-const client_1 = require("@prisma/client");
-const singlePlayer_1 = require("./singlePlayer");
 const multiplayer_1 = require("./multiplayer");
+const redisConfig_1 = require("./redisConfig");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const httpServer = (0, http_1.createServer)(app);
-const prisma = new client_1.PrismaClient();
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 const PORT = Number(process.env.PORT) || 8000;
@@ -32,20 +30,30 @@ const io = new socket_io_1.Server(httpServer, {
 });
 app.use('/api', userRoutes_1.default);
 app.use('/api', gameRoutes_1.default);
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
     console.log(`User connected: ${socket.id}`);
-    socket.on('initialize', (data) => {
-        const { mode } = data;
-        console.log(`Initialize event received: mode = ${mode}`);
-        if (mode === 'single') {
-            (0, singlePlayer_1.handleSinglePlayerEvents)(io, socket, prisma);
-        }
-        else if (mode === 'multi') {
-            (0, multiplayer_1.handleMultiplayerEvents)(io, socket, prisma);
-        }
-    });
-    socket.on('disconnect', () => {
+    // Store user in Redis
+    try {
+        await redisConfig_1.redisClient.hSet(`user:${socket.id}`, {
+            status: 'active',
+            socketId: socket.id,
+            name: `Player_${socket.id}`
+        });
+    }
+    catch (error) {
+        console.error('Error storing user socket ID:', error);
+    }
+    (0, multiplayer_1.handleMultiplayerEvents)(io, socket);
+    socket.on('disconnect', async () => {
         console.log('User disconnected');
+        // Remove the user record from Redis
+        try {
+            await redisConfig_1.redisClient.del(`user:${socket.id}`);
+            console.log(`User with socket ID ${socket.id} removed from Redis`);
+        }
+        catch (error) {
+            console.error('Error removing user from Redis:', error);
+        }
     });
 });
 io.on('connection_error', (error) => {

@@ -4,15 +4,13 @@ import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import gameRoutes from "./routes/gameRoutes";
 import userRoutes from "./routes/userRoutes";
-import { PrismaClient } from '@prisma/client';
-import { handleSinglePlayerEvents } from "./singlePlayer";
 import { handleMultiplayerEvents } from "./multiplayer";
+import {redisClient} from "./redisConfig";
 
 dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
-const prisma = new PrismaClient();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -35,22 +33,32 @@ const io = new Server(httpServer, {
 app.use('/api', userRoutes);
 app.use('/api', gameRoutes);
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
     console.log(`User connected: ${socket.id}`);
 
-    socket.on('initialize', (data) => {
-        const { mode } = data;
-        console.log(`Initialize event received: mode = ${mode}`);
+    // Store user in Redis
+    try {
+        await redisClient.hSet(`user:${socket.id}`, {
+            status: 'active',
+            socketId: socket.id,
+            name: `Player_${socket.id}`
+        });
+    } catch (error) {
+        console.error('Error storing user socket ID:', error);
+    }
 
-        if (mode === 'single') {
-            handleSinglePlayerEvents(io, socket, prisma);
-        } else if (mode === 'multi') {
-            handleMultiplayerEvents(io, socket, prisma);
-        }
-    });
+    handleMultiplayerEvents(io, socket);
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         console.log('User disconnected');
+
+        // Remove the user record from Redis
+        try {
+            await redisClient.del(`user:${socket.id}`);
+            console.log(`User with socket ID ${socket.id} removed from Redis`);
+        } catch (error) {
+            console.error('Error removing user from Redis:', error);
+        }
     });
 });
 
